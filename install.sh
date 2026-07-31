@@ -18,6 +18,10 @@ if [ -z "$DEVICE_KEY" ]; then
   echo "Error: device key cannot be empty." >&2
   exit 1
 fi
+if [[ ! "$DEVICE_KEY" =~ ^[A-Za-z0-9]+$ ]]; then
+  echo "Error: device key must contain only letters and numbers." >&2
+  exit 1
+fi
 
 if [ "${CLAUDE_PAGER_SKIP_CURL:-0}" != "1" ]; then
   if ! curl -fsS --connect-timeout 5 --max-time 10 \
