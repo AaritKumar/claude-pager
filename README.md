@@ -13,7 +13,7 @@ All three are grouped under `claude-pager` on your phone.
 ## Requirements
 
 - macOS
-- [Claude Code](https://claude.com/claude-code) installed
+- [Claude Code](https://claude.com/claude-code) >= 2.1.78 (for `StopFailure` hook support)
 - `curl` and `python3` (both ship with macOS)
 - An iPhone with [Bark – Custom Notifications](https://apps.apple.com/app/bark-customed-notifications/id1403753865) installed, with notifications allowed
 
@@ -25,7 +25,7 @@ cd claude-pager
 ./install.sh
 ```
 
-Open Bark on your iPhone, copy the device key it shows you (looks like `https://api.day.app/YOUR_DEVICE_KEY/`), and paste just the key when `install.sh` asks for it.
+Open Bark on your iPhone, copy the device key it shows you (looks like `https://api.day.app/YOUR_DEVICE_KEY/`), and paste it when `install.sh` asks for it — only the key itself is required, but pasting the whole URL Bark shows you works too, since `install.sh` strips the surrounding URL automatically.
 
 The script sends a real "Installed successfully" test notification before touching any files, then merges the three hooks into `~/.claude/settings.json` — any settings you already have there are preserved (and backed up first).
 

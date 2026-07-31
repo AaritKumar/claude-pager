@@ -13,11 +13,18 @@ for dep in curl python3; do
   fi
 done
 
-read -r -p "Paste your Bark device key: " DEVICE_KEY
+read -r -s -p "Paste your Bark device key: " DEVICE_KEY
+echo
 if [ -z "$DEVICE_KEY" ]; then
   echo "Error: device key cannot be empty." >&2
   exit 1
 fi
+
+# Bark shows the key as a full URL (https://api.day.app/YOUR_DEVICE_KEY/) —
+# accept that form too by stripping the host prefix and any trailing slash.
+DEVICE_KEY="${DEVICE_KEY#https://api.day.app/}"
+DEVICE_KEY="${DEVICE_KEY%/}"
+
 if [[ ! "$DEVICE_KEY" =~ ^[A-Za-z0-9]+$ ]]; then
   echo "Error: device key must contain only letters and numbers." >&2
   exit 1
@@ -39,12 +46,12 @@ mkdir -p "$CLAUDE_DIR"
 
 BACKUP_FILE=""
 if [ -f "$SETTINGS_FILE" ]; then
-  BACKUP_FILE="${SETTINGS_FILE}.bak.$(date +%s)"
+  BACKUP_FILE="${SETTINGS_FILE}.bak.$(date +%s).$$"
   cp "$SETTINGS_FILE" "$BACKUP_FILE"
   echo "Backed up existing settings to $BACKUP_FILE"
 fi
 
-python3 - "$SETTINGS_FILE" "$DEVICE_KEY" <<'PYEOF'
+if ! python3 - "$SETTINGS_FILE" "$DEVICE_KEY" <<'PYEOF'
 import json
 import sys
 
@@ -55,6 +62,8 @@ try:
         data = json.load(f)
 except FileNotFoundError:
     data = {}
+except json.JSONDecodeError:
+    sys.exit(1)
 
 hooks = data.setdefault("hooks", {})
 
@@ -80,22 +89,31 @@ EVENTS = {
     ),
 }
 
+def is_bark_hook(command):
+    # Detect both our own tagged hooks (group=claude-pager) and legacy
+    # hand-written Bark hooks from the old manual setup (no group= param,
+    # just a bare api.day.app URL) — both get replaced on install.
+    return "group=claude-pager" in command or "api.day.app" in command
+
 for event, hook_entry in EVENTS.items():
     entries = hooks.setdefault(event, [])
-    already_installed = any(
-        "group=claude-pager" in h.get("command", "")
-        for entry in entries
-        for h in entry.get("hooks", [])
-    )
-    if not already_installed:
-        entries.append(hook_entry)
+    kept = [
+        entry for entry in entries
+        if not any(is_bark_hook(h.get("command", "")) for h in entry.get("hooks", []))
+    ]
+    kept.append(hook_entry)
+    hooks[event] = kept
 
 with open(settings_path, "w") as f:
     json.dump(data, f, indent=2)
     f.write("\n")
 PYEOF
+then
+  echo "Error: $SETTINGS_FILE is not valid JSON. Fix it (python3 -m json.tool ~/.claude/settings.json) and re-run." >&2
+  exit 1
+fi
 
-if ! python3 -c "import json; json.load(open('$SETTINGS_FILE'))" >/dev/null 2>&1; then
+if ! python3 -c 'import json,sys; json.load(open(sys.argv[1]))' "$SETTINGS_FILE" >/dev/null 2>&1; then
   echo "Error: wrote invalid JSON to $SETTINGS_FILE." >&2
   if [ -n "$BACKUP_FILE" ]; then
     cp "$BACKUP_FILE" "$SETTINGS_FILE"

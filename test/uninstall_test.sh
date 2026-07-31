@@ -59,4 +59,36 @@ fi
 grep -q "nothing to uninstall" /tmp/uninstall_out2.txt
 rm -rf "$tmp_home"
 
+echo "--- case: round-trip against install.sh's real output ---"
+tmp_home="$(mktemp -d)"
+status=0
+if echo "roundTripKey123" | HOME="$tmp_home" CLAUDE_PAGER_SKIP_CURL=1 "$SCRIPT_DIR/install.sh" >/tmp/install_roundtrip_out.txt 2>&1; then
+  status=0
+else
+  status=$?
+fi
+if [ "$status" -ne 0 ]; then
+  echo "FAIL: install.sh exited $status during round-trip setup"
+  cat /tmp/install_roundtrip_out.txt
+  exit 1
+fi
+status=0
+if HOME="$tmp_home" "$SCRIPT_DIR/uninstall.sh" >/tmp/uninstall_roundtrip_out.txt 2>&1; then
+  status=0
+else
+  status=$?
+fi
+if [ "$status" -ne 0 ]; then
+  echo "FAIL: uninstall.sh exited $status against install.sh's real output"
+  cat /tmp/uninstall_roundtrip_out.txt
+  exit 1
+fi
+python3 - "$tmp_home/.claude/settings.json" <<'EOF'
+import json, sys
+data = json.load(open(sys.argv[1]))
+assert data == {}, f"expected empty settings after full round-trip, got {data}"
+print("OK: install.sh's real output is fully removed by uninstall.sh")
+EOF
+rm -rf "$tmp_home"
+
 echo "All uninstall.sh cases passed"

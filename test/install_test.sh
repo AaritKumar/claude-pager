@@ -112,6 +112,104 @@ EOF
   fi
 fi
 
+echo "--- case: legacy untagged api.day.app hook is upgraded in place, not duplicated ---"
+tmp_home="$(mktemp -d)"
+mkdir -p "$tmp_home/.claude"
+cat > "$tmp_home/.claude/settings.json" <<JSON
+{"hooks": {"Stop": [{"matcher": "", "hooks": [{"type": "command", "command": "curl -s 'https://api.day.app/oldlegacykey/Done/Done?sound=glass' >/dev/null 2>&1", "async": true}]}]}}
+JSON
+status=0
+if echo "fakeDeviceKey123" | HOME="$tmp_home" CLAUDE_PAGER_SKIP_CURL=1 "$SCRIPT_DIR/install.sh" >/tmp/install_out.txt 2>&1; then
+  status=0
+else
+  status=$?
+fi
+if [ "$status" -ne 0 ]; then
+  echo "FAIL: install.sh exited $status"
+  cat /tmp/install_out.txt
+  FAILS=$((FAILS+1))
+else
+  python3 - "$tmp_home/.claude/settings.json" <<'EOF'
+import json, sys
+data = json.load(open(sys.argv[1]))
+stop_entries = data["hooks"]["Stop"]
+count = sum(1 for entry in stop_entries for h in entry.get("hooks", []))
+assert count == 1, f"expected exactly 1 Stop hook after upgrade, found {count}"
+cmd = stop_entries[0]["hooks"][0]["command"]
+assert "group=claude-pager" in cmd, "legacy hook was not upgraded to a tagged claude-pager hook"
+assert "oldlegacykey" not in cmd, "legacy device key should have been replaced"
+print("OK: legacy untagged Bark hook upgraded in place")
+EOF
+fi
+rm -rf "$tmp_home"
+
+echo "--- case: key rotation replaces the persisted URL ---"
+tmp_home="$(mktemp -d)"
+status=0
+if echo "firstDeviceKey111" | HOME="$tmp_home" CLAUDE_PAGER_SKIP_CURL=1 "$SCRIPT_DIR/install.sh" >/tmp/install_out.txt 2>&1; then
+  status=0
+else
+  status=$?
+fi
+if [ "$status" -ne 0 ]; then
+  echo "FAIL: install.sh (first run, key rotation case) exited $status"
+  cat /tmp/install_out.txt
+  FAILS=$((FAILS+1))
+  rm -rf "$tmp_home"
+else
+  if echo "secondDeviceKey222" | HOME="$tmp_home" CLAUDE_PAGER_SKIP_CURL=1 "$SCRIPT_DIR/install.sh" >/tmp/install_out.txt 2>&1; then
+    status=0
+  else
+    status=$?
+  fi
+  if [ "$status" -ne 0 ]; then
+    echo "FAIL: install.sh (second run, key rotation case) exited $status"
+    cat /tmp/install_out.txt
+    FAILS=$((FAILS+1))
+  else
+    python3 - "$tmp_home/.claude/settings.json" <<'EOF'
+import json, sys
+data = json.load(open(sys.argv[1]))
+for event in ("Notification", "Stop", "StopFailure"):
+    entries = data["hooks"][event]
+    count = sum(1 for entry in entries for h in entry.get("hooks", []))
+    assert count == 1, f"expected exactly 1 hook for {event} after rotation, found {count}"
+    cmd = entries[0]["hooks"][0]["command"]
+    assert "secondDeviceKey222" in cmd, f"{event} hook does not contain the new device key"
+    assert "firstDeviceKey111" not in cmd, f"{event} hook still contains the old device key"
+print("OK: key rotation replaced the persisted URL for all events")
+EOF
+  fi
+  rm -rf "$tmp_home"
+fi
+
+echo "--- case: invalid existing JSON produces a clean error, not a traceback ---"
+tmp_home="$(mktemp -d)"
+mkdir -p "$tmp_home/.claude"
+printf '{"hooks": {,}}' > "$tmp_home/.claude/settings.json"
+status=0
+if echo "fakeDeviceKey123" | HOME="$tmp_home" CLAUDE_PAGER_SKIP_CURL=1 "$SCRIPT_DIR/install.sh" >/tmp/install_out.txt 2>&1; then
+  status=0
+else
+  status=$?
+fi
+if [ "$status" -eq 0 ]; then
+  echo "FAIL: install.sh should have failed on invalid existing JSON"
+  cat /tmp/install_out.txt
+  FAILS=$((FAILS+1))
+elif grep -q "Traceback" /tmp/install_out.txt; then
+  echo "FAIL: install.sh leaked a raw Python traceback"
+  cat /tmp/install_out.txt
+  FAILS=$((FAILS+1))
+elif ! grep -q "not valid JSON" /tmp/install_out.txt; then
+  echo "FAIL: install.sh did not print a clean one-line JSON error"
+  cat /tmp/install_out.txt
+  FAILS=$((FAILS+1))
+else
+  echo "OK: invalid existing JSON produced a clean error, no traceback"
+fi
+rm -rf "$tmp_home"
+
 echo "--- case: invalid device key is rejected ---"
 tmp_home="$(mktemp -d)"
 status=0
