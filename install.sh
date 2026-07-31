@@ -1,10 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-if [ "$(uname)" != "Darwin" ]; then
-  echo "Error: claude-pager only supports macOS." >&2
-  exit 1
-fi
+case "$(uname)" in
+  Darwin|Linux) ;;
+  *)
+    echo "Error: claude-pager supports macOS and Linux. On Windows, run this from WSL or Git Bash." >&2
+    exit 1
+    ;;
+esac
 
 for dep in curl python3; do
   if ! command -v "$dep" >/dev/null 2>&1; then

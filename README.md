@@ -12,9 +12,9 @@ All three are grouped under `claude-pager` on your phone.
 
 ## Requirements
 
-- macOS
+- macOS or Linux (on Windows, run this from WSL or Git Bash — both provide the `bash`/`curl`/`python3` this needs)
 - [Claude Code](https://claude.com/claude-code) >= 2.1.78 (for `StopFailure` hook support)
-- `curl` and `python3` (both ship with macOS)
+- `curl` and `python3` (both ship with macOS; install via your package manager on Linux, e.g. `apt install curl python3`)
 - An iPhone with [Bark – Custom Notifications](https://apps.apple.com/app/bark-customed-notifications/id1403753865) installed, with notifications allowed
 
 ## Install

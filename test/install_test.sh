@@ -230,6 +230,63 @@ else
 fi
 rm -rf "$tmp_home"
 
+make_fake_uname() {
+  local dir="$1" report="$2"
+  mkdir -p "$dir"
+  cat > "$dir/uname" <<EOF
+#!/usr/bin/env bash
+echo "$report"
+EOF
+  chmod +x "$dir/uname"
+}
+
+for os in Darwin Linux; do
+  echo "--- case: accepts uname == $os ---"
+  tmp_home="$(mktemp -d)"
+  fake_bin="$(mktemp -d)"
+  make_fake_uname "$fake_bin" "$os"
+  status=0
+  if echo "fakeDeviceKey123" | HOME="$tmp_home" CLAUDE_PAGER_SKIP_CURL=1 PATH="$fake_bin:$PATH" "$SCRIPT_DIR/install.sh" >/tmp/install_out.txt 2>&1; then
+    status=0
+  else
+    status=$?
+  fi
+  if [ "$status" -ne 0 ]; then
+    echo "FAIL: install.sh rejected uname == $os"
+    cat /tmp/install_out.txt
+    FAILS=$((FAILS+1))
+  else
+    echo "OK: install.sh accepted uname == $os"
+  fi
+  rm -rf "$tmp_home" "$fake_bin"
+done
+
+echo "--- case: rejects an unsupported OS with a clear message ---"
+tmp_home="$(mktemp -d)"
+fake_bin="$(mktemp -d)"
+make_fake_uname "$fake_bin" "FreeBSD"
+status=0
+if echo "fakeDeviceKey123" | HOME="$tmp_home" CLAUDE_PAGER_SKIP_CURL=1 PATH="$fake_bin:$PATH" "$SCRIPT_DIR/install.sh" >/tmp/install_out.txt 2>&1; then
+  status=0
+else
+  status=$?
+fi
+if [ "$status" -eq 0 ]; then
+  echo "FAIL: install.sh accepted an unsupported OS (FreeBSD)"
+  cat /tmp/install_out.txt
+  FAILS=$((FAILS+1))
+elif ! grep -q "supports macOS and Linux" /tmp/install_out.txt; then
+  echo "FAIL: install.sh did not print a clear unsupported-OS message"
+  cat /tmp/install_out.txt
+  FAILS=$((FAILS+1))
+elif [ -f "$tmp_home/.claude/settings.json" ]; then
+  echo "FAIL: install.sh wrote settings.json despite rejecting the OS"
+  FAILS=$((FAILS+1))
+else
+  echo "OK: unsupported OS rejected with a clear message, no settings.json written"
+fi
+rm -rf "$tmp_home" "$fake_bin"
+
 if [ "$FAILS" -ne 0 ]; then
   echo "$FAILS case(s) failed"
   exit 1
